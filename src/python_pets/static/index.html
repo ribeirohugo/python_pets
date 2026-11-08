@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cat or Dog?</title>
+<style>
+  :root {
+    --bg: #f6f5f2; --card: #ffffff; --text: #1d1d1f; --muted: #6b6b70; --line: #e4e2dc;
+    --accent: #3b5bdb; --cat: #e8590c; --dog: #1c7ed6; --none: #868e96;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #131316; --card: #1c1c21; --text: #ececf1; --muted: #9a9aa3; --line: #2c2c33;
+            --accent: #748ffc; --cat: #ff922b; --dog: #4dabf7; --none: #adb5bd; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 880px; margin: 0 auto; padding: 24px 16px 48px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  h1 { margin: 0; font-size: 28px; letter-spacing: -0.02em; }
+  .mode { font-size: 13px; color: var(--muted); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-top: 16px; }
+
+  .tabs { display: flex; gap: 4px; background: var(--line); padding: 4px; border-radius: 10px; width: fit-content; margin-top: 20px; }
+  .tabs button { border: 0; background: transparent; color: var(--text); padding: 8px 18px; border-radius: 7px;
+                 font: inherit; cursor: pointer; }
+  .tabs button[aria-selected="true"] { background: var(--card); box-shadow: 0 1px 3px rgba(0,0,0,.12); font-weight: 600; }
+
+  .btn { border: 1px solid var(--line); background: var(--card); color: var(--text); padding: 9px 16px;
+         border-radius: 9px; font: inherit; cursor: pointer; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+  .drop { border: 2px dashed var(--line); border-radius: 12px; padding: 36px 16px; text-align: center; color: var(--muted);
+          cursor: pointer; transition: border-color .15s, background .15s; }
+  .drop.over { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+  .drop strong { color: var(--text); }
+  kbd { border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 0 5px; font-size: 13px; }
+
+  .stage { position: relative; margin-top: 14px; border-radius: 10px; overflow: hidden; background: #000;
+           display: none; line-height: 0; }
+  .stage.show { display: block; }
+  .stage video, .stage canvas { width: 100%; height: auto; display: block; }
+  .stage .overlay { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+  video.mirror { transform: scaleX(-1); }
+
+  .verdict { display: flex; align-items: center; gap: 14px; }
+  .verdict .emoji { font-size: 44px; line-height: 1; }
+  .verdict .title { font-size: 24px; font-weight: 700; }
+  .verdict .sub { color: var(--muted); font-size: 14px; }
+  .dets { list-style: none; padding: 0; margin: 14px 0 0; display: grid; gap: 8px; }
+  .dets li { display: grid; grid-template-columns: 56px 1fr 52px; gap: 10px; align-items: center; font-size: 14px; }
+  .bar { height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; }
+  .bar > span { display: block; height: 100%; border-radius: 4px; }
+  .slider { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--muted); }
+  .slider input { width: 160px; }
+  .err { color: #e03131; }
+  .hidden { display: none !important; }
+  label.toggle { display: flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>🐱 Cat or Dog? 🐶</h1>
+    <span class="mode" id="mode">loading model…</span>
+  </header>
+
+  <div class="tabs" role="tablist">
+    <button role="tab" aria-selected="true" data-tab="image">Upload / Paste</button>
+    <button role="tab" aria-selected="false" data-tab="camera">Camera</button>
+  </div>
+
+  <!-- ---------------- Image tab ---------------- -->
+  <section class="card" id="tab-image">
+    <div class="drop" id="drop" tabindex="0">
+      <div style="font-size:32px">🖼️</div>
+      <strong>Drop an image here, click to choose one,</strong><br>
+      or paste with <kbd>Ctrl</kbd>+<kbd>V</kbd> anywhere on the page
+    </div>
+    <input type="file" id="file" accept="image/*" class="hidden">
+    <div class="row" style="margin-top:12px">
+      <button class="btn" id="pasteBtn">📋 Paste from clipboard</button>
+    </div>
+    <div class="stage" id="imgStage"><canvas id="imgCanvas"></canvas></div>
+  </section>
+
+  <!-- ---------------- Camera tab ---------------- -->
+  <section class="card hidden" id="tab-camera">
+    <div class="row">
+      <button class="btn primary" id="camStart">Start camera</button>
+      <button class="btn" id="camSnap" disabled>📸 Snap &amp; detect</button>
+      <button class="btn" id="camFlip" disabled>🔄 Switch camera</button>
+      <label class="toggle"><input type="checkbox" id="live"> Live detection</label>
+    </div>
+    <div class="stage" id="camStage">
+      <video id="video" playsinline muted></video>
+      <canvas class="overlay" id="camOverlay"></canvas>
+    </div>
+    <p class="err hidden" id="camErr"></p>
+  </section>
+
+  <!-- ---------------- Result ---------------- -->
+  <section class="card">
+    <div class="row" style="justify-content:space-between">
+      <div class="verdict">
+        <div class="emoji" id="vEmoji">❔</div>
+        <div>
+          <div class="title" id="vTitle">Waiting for a picture</div>
+          <div class="sub" id="vSub">Upload, paste, or use your camera.</div>
+        </div>
+      </div>
+      <div class="slider">
+        Min confidence
+        <input type="range" id="thresh" min="0.1" max="0.95" step="0.05" value="0.5">
+        <span id="threshVal">50%</span>
+      </div>
+    </div>
+    <ul class="dets" id="dets"></ul>
+  </section>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const COLORS = { cat: () => css('--cat'), dog: () => css('--dog') };
+
+// ------------------------------------------------------------ model info
+fetch('/api/info').then(r => r.json()).then(i => {
+  $('mode').textContent = i.mode === 'trained'
+    ? `fine-tuned model · ${i.device}`
+    : `stock COCO model (run train.py for better results) · ${i.device}`;
+}).catch(() => $('mode').textContent = 'server offline');
+
+// ------------------------------------------------------------ tabs
+document.querySelectorAll('[data-tab]').forEach(btn => btn.onclick = () => {
+  document.querySelectorAll('[data-tab]').forEach(b => b.setAttribute('aria-selected', b === btn));
+  $('tab-image').classList.toggle('hidden', btn.dataset.tab !== 'image');
+  $('tab-camera').classList.toggle('hidden', btn.dataset.tab !== 'camera');
+  if (btn.dataset.tab !== 'camera') stopCamera();
+});
+
+// ------------------------------------------------------------ threshold
+const thresh = $('thresh');
+thresh.oninput = () => { $('threshVal').textContent = Math.round(thresh.value * 100) + '%'; };
+thresh.onchange = () => { if (lastBlob && lastSource === 'image') runOnImage(lastBlob); };
+
+// ------------------------------------------------------------ API
+async function predict(blob) {
+  const fd = new FormData();
+  fd.append('file', blob, 'image.jpg');
+  const res = await fetch(`/api/predict?threshold=${thresh.value}`, { method: 'POST', body: fd });
+  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
+  return res.json();
+}
+
+function showResult(r) {
+  const V = {
+    cat:  ['🐱', 'It\'s a cat!'],
+    dog:  ['🐶', 'It\'s a dog!'],
+    both: ['🐱🐶', 'Cats and dogs!'],
+    none: ['🤷', 'No cat or dog found'],
+  }[r.verdict];
+  $('vEmoji').textContent = V[0];
+  $('vTitle').textContent = V[1];
+  const parts = [];
+  if (r.counts.cat) parts.push(`${r.counts.cat} cat${r.counts.cat > 1 ? 's' : ''}`);
+  if (r.counts.dog) parts.push(`${r.counts.dog} dog${r.counts.dog > 1 ? 's' : ''}`);
+  $('vSub').textContent = parts.length ? `Detected ${parts.join(' and ')}.` : 'Try lowering the confidence threshold or a clearer photo.';
+  $('dets').innerHTML = r.detections.map(d => `
+    <li><span>${d.label === 'cat' ? '🐱' : '🐶'} ${d.label}</span>
+        <div class="bar"><span style="width:${d.score * 100}%;background:${COLORS[d.label]()}"></span></div>
+        <span style="text-align:right">${(d.score * 100).toFixed(0)}%</span></li>`).join('');
+}
+
+function showError(msg) {
+  $('vEmoji').textContent = '⚠️';
+  $('vTitle').textContent = 'Something went wrong';
+  $('vSub').textContent = msg;
+  $('dets').innerHTML = '';
+}
+
+function drawBoxes(ctx, dets, sx, sy, mirrorWidth) {
+  const lw = Math.max(2, ctx.canvas.width / 300);
+  ctx.lineWidth = lw;
+  ctx.font = `600 ${Math.max(14, ctx.canvas.width / 40)}px system-ui, sans-serif`;
+  for (const d of dets) {
+    let [x1, y1, x2, y2] = d.box.map((v, i) => v * (i % 2 ? sy : sx));
+    if (mirrorWidth) [x1, x2] = [mirrorWidth - x2, mirrorWidth - x1];
+    const color = COLORS[d.label]();
+    ctx.strokeStyle = color;
+    ctx.strokeRect(x1, y1, x2 - x1, y2 - y1);
+    const text = `${d.label} ${(d.score * 100).toFixed(0)}%`;
+    const th = parseInt(ctx.font.match(/(\d+)px/)[1]) + 8;
+    const tw = ctx.measureText(text).width + 12;
+    const ty = y1 - th < 0 ? y1 : y1 - th;
+    ctx.fillStyle = color;
+    ctx.fillRect(x1 - lw / 2, ty, tw, th);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(text, x1 + 6 - lw / 2, ty + th - 8);
+  }
+}
+
+// ------------------------------------------------------------ image mode
+let lastBlob = null, lastSource = null;
+
+async function runOnImage(blob) {
+  lastBlob = blob; lastSource = 'image';
+  const img = await createImageBitmap(blob, { imageOrientation: 'from-image' }).catch(() => null);
+  if (!img) return showError('Could not read that image.');
+  const canvas = $('imgCanvas'), ctx = canvas.getContext('2d');
+  canvas.width = img.width; canvas.height = img.height;
+  ctx.drawImage(img, 0, 0);
+  $('imgStage').classList.add('show');
+  $('vTitle').textContent = 'Thinking…'; $('vEmoji').textContent = '⏳';
+  try {
+    const r = await predict(blob);
+    ctx.drawImage(img, 0, 0);
+    drawBoxes(ctx, r.detections, img.width / r.width, img.height / r.height);
+    showResult(r);
+  } catch (e) { showError(e.message); }
+}
+
+const drop = $('drop'), fileInput = $('file');
+drop.onclick = () => fileInput.click();
+drop.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') fileInput.click(); };
+fileInput.onchange = () => { if (fileInput.files[0]) runOnImage(fileInput.files[0]); fileInput.value = ''; };
+drop.ondragover = (e) => { e.preventDefault(); drop.classList.add('over'); };
+drop.ondragleave = () => drop.classList.remove('over');
+drop.ondrop = (e) => {
+  e.preventDefault(); drop.classList.remove('over');
+  const f = [...e.dataTransfer.files].find(f => f.type.startsWith('image/'));
+  if (f) runOnImage(f); else showError('Please drop an image file.');
+};
+
+function switchToImageTab() { document.querySelector('[data-tab="image"]').click(); }
+
+document.addEventListener('paste', (e) => {
+  const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith('image/'));
+  if (item) { e.preventDefault(); switchToImageTab(); runOnImage(item.getAsFile()); }
+});
+
+$('pasteBtn').onclick = async () => {
+  try {
+    for (const item of await navigator.clipboard.read()) {
+      const type = item.types.find(t => t.startsWith('image/'));
+      if (type) return runOnImage(await item.getType(type));
+    }
+    showError('No image in the clipboard. Copy an image first.');
+  } catch { showError('Clipboard access was blocked — use Ctrl+V instead.'); }
+};
+
+// ------------------------------------------------------------ camera mode
+const video = $('video'), overlay = $('camOverlay');
+let stream = null, facing = 'user', liveBusy = false, liveTimer = null;
+
+async function startCamera() {
+  $('camErr').classList.add('hidden');
+  stopCamera();
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+  } catch (e) {
+    $('camErr').textContent = `Camera unavailable: ${e.message}. (Browsers only allow the camera on localhost or https.)`;
+    $('camErr').classList.remove('hidden');
+    return;
+  }
+  video.srcObject = stream;
+  await video.play();
+  video.classList.toggle('mirror', facing === 'user');
+  overlay.width = video.videoWidth; overlay.height = video.videoHeight;
+  $('camStage').classList.add('show');
+  $('camStart').textContent = 'Stop camera';
+  $('camSnap').disabled = $('camFlip').disabled = false;
+  if ($('live').checked) startLive();
+}
+
+function stopCamera() {
+  stopLive();
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  stream = null;
+  $('camStage').classList.remove('show');
+  $('camStart').textContent = 'Start camera';
+  $('camSnap').disabled = $('camFlip').disabled = true;
+}
+
+function grabFrame() {
+  const c = document.createElement('canvas');
+  c.width = video.videoWidth; c.height = video.videoHeight;
+  c.getContext('2d').drawImage(video, 0, 0);
+  return new Promise(res => c.toBlob(res, 'image/jpeg', 0.85));
+}
+
+async function detectFrame() {
+  const blob = await grabFrame();
+  const r = await predict(blob);
+  if (!stream) return;
+  const ctx = overlay.getContext('2d');
+  overlay.width = video.videoWidth; overlay.height = video.videoHeight;
+  ctx.clearRect(0, 0, overlay.width, overlay.height);
+  drawBoxes(ctx, r.detections, overlay.width / r.width, overlay.height / r.height,
+            facing === 'user' ? overlay.width : 0);
+  showResult(r);
+}
+
+function startLive() {
+  stopLive();
+  const loop = async () => {
+    if (!stream || !$('live').checked) return;
+    if (!liveBusy) {
+      liveBusy = true;
+      try { await detectFrame(); } catch (e) { showError(e.message); }
+      liveBusy = false;
+    }
+    liveTimer = setTimeout(loop, 150);
+  };
+  loop();
+}
+function stopLive() { clearTimeout(liveTimer); liveTimer = null; }
+
+$('camStart').onclick = () => stream ? stopCamera() : startCamera();
+$('camSnap').onclick = async () => {
+  $('vTitle').textContent = 'Thinking…'; $('vEmoji').textContent = '⏳';
+  try { await detectFrame(); } catch (e) { showError(e.message); }
+};
+$('camFlip').onclick = () => { facing = facing === 'user' ? 'environment' : 'user'; startCamera(); };
+$('live').onchange = () => {
+  if ($('live').checked && stream) startLive();
+  else { stopLive(); overlay.getContext('2d').clearRect(0, 0, overlay.width, overlay.height); }
+};
+</script>
+</body>
+</html>

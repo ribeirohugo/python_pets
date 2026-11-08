@@ -1,0 +1,10 @@
+# For GPU (NVIDIA) install torch first:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+torch
+torchvision
+fastapi
+uvicorn[standard]
+python-multipart
+kagglehub
+python-dotenv
+pillow

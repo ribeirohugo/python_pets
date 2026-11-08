@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "python_pets"
+version = "0.1.0"
+description = "Detect cats and dogs in photos with a fine-tuned Faster R-CNN"
+readme = "README.md"
+requires-python = ">=3.11"
+dynamic = ["dependencies"]
+
+[project.scripts]
+pets-train = "python_pets.train:main"
+pets-serve = "python_pets.app:main"
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+python_pets = ["static/*"]

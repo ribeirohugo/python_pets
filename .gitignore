@@ -218,3 +218,9 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Dataset and trained models
+datasets/*/*
+!datasets/*/.gitkeep
+weights/*
+!weights/.gitkeep
